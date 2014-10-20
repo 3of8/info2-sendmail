@@ -1,0 +1,19 @@
+Name:               info2-sendmail
+Version:            0.1.0.0
+Description:        A tool to batch-send feedback mails for homework automatically
+Author:             Manuel Eberl
+Build-Type:         Simple
+Cabal-Version:      >= 1.18
+
+Executable info2-sendmail
+    Build-Depends:      base == 4.*, 
+                        tls == 1.2.9, 
+                        HaskellNet-SSL == 0.2.5.*, 
+                        HaskellNet == 0.4.*, 
+                        mime-mail >= 0.4.5, 
+                        bytestring, 
+                        text >= 0.11, 
+                        containers >= 0.5
+    GHC-Options:        -Wall
+    Main-Is:            Info2SendMail.hs
+    Default-Language:   Haskell2010

@@ -2,6 +2,7 @@ module Misc ((+++), changeLeft, mapLeft) where
 
 import qualified Data.Text as T
 
+(+++) :: T.Text -> T.Text -> T.Text
 (+++) = T.append
 
 mapLeft :: (a -> b) -> Either a c -> Either b c
