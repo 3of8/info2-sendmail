@@ -2,12 +2,14 @@
 
 module Info2SendMail where
 
+import Misc
+import Config
+import Data.Maybe
 import Data.Either
 import qualified Data.Text as T
 import Data.Text.Lazy (fromStrict)
 import qualified Data.Text.IO as TIO
 import Data.ByteString.Lazy (toStrict)
-import Text.Printf
 import Network.Mail.Mime
 import Network.HaskellNet.SMTP
 import Network.HaskellNet.Auth
@@ -19,32 +21,50 @@ import System.Environment
 
 -- User settings that may change on a weekly basis
 
-sheetNumber    = 1
-introduction   = "hier ist das Feedback für deine Hausaufgaben zu Übungsblatt " +++ T.pack (show sheetNumber) +++ ". " +++
-                 "Die genaue Bepunktung wird automatisch auf Basis unserer QuickCheck-Tests erstellt. " +++
-                 "Du kannst sie online im Übungssystem einsehen."
-conclusion     = "Falls etwas an der Bewertung unklar ist, kannst du gerne per E-Mail nachfragen."
+data Config = Config
+  {
+    cfgMyName :: T.Text,
+    cfgMyMailAddress :: T.Text,
+    cfgSMTPHost :: T.Text,
+    cfgSMTPUser :: T.Text,
+    cfgSheet :: T.Text,
+    cfgSubject :: T.Text,
+    cfgGreeting :: T.Text,
+    cfgIntro :: T.Text,
+    cfgConclusion :: T.Text,
+    cfgValediction :: T.Text,
+    cfgSigName :: T.Text
+  }
+  
+defaultConfigMap :: ConfigMap
+defaultConfigMap =
+  case readConfig ["Introduction: ", "Conclusion: ", "Sheet: "] of
+    Left errs -> error (T.unpack $ T.intercalate "\n" errs)
+    Right c -> c
 
 
--- User settings that should remain mostly constant
+-- Reading config
 
-myName         = "Manuel Eberl"
-myMailAddress  = "eberlm@in.tum.de"
-valediction    = "Viele Grüße"
-signatureName  = "Manuel"
-subjectPattern = "[Info2] Feedback zu Übungsblatt %d"
+readNamedText :: T.Text -> [T.Text] -> (T.Text, [T.Text])
+readNamedText s (t:ts)
+    | not (null ls) && T.strip (head ls) == s = (T.strip $ T.unlines (tail ls), ts)
+  where ls = dropWhile T.null $ T.lines t
+readNamedText s _ = ("", [])
 
+parseConfig :: [T.Text] -> Either [T.Text] (Config, [T.Text])
+parseConfig (t:ts) =
+  do c' <- readConfig (T.lines t)
+     let c = mergeConfigs c' defaultConfigMap
+     let (intro, ts') = readNamedText "Introduction:" ts
+     let (concl, ts'') = readNamedText "Conclusion:" ts'
+     [myName, myMailAddress, smtpHost, smtpUser, sheet, subject, greeting, valediction, sigName] <-
+         mapM (mapLeft return . lookupConfigString c) 
+              ["My name", "My e-mail", "SMTP host", "SMTP user", "Sheet", "Subject", "Greeting", 
+                   "Valediction", "Signature name"]
+     return (Config myName myMailAddress smtpHost smtpUser sheet subject greeting intro concl 
+                    valediction sigName, ts'')
+parseConfig _ = Left ["No configuration given."]
 
--- SMTP settings
-
-smtpHost       = "mail.in.tum.de"
-smtpUser       = "eberlm"
-smtpAuthType   = LOGIN
-
-
--- Constants
-
-usageDescription = "No file given."
 
 -- Parsing blocks
 
@@ -53,7 +73,7 @@ parseBlock (name : mail : rest) =
      i <- T.findIndex (== ' ') name
      let (lastName, firstName) = (T.take i name, T.drop (i + 1) name)
      mail <- liftM T.strip $ T.stripPrefix "E-Mail:" mail
-     let text = T.strip . T.unlines $ rest
+     let text = T.strip $ T.unlines rest
      return (firstName, lastName, mail, text)
 parseBlock b = Nothing
 
@@ -62,24 +82,32 @@ parseBlocks bs =
   let bs' = map (parseBlock . T.lines . T.strip) $ bs 
   in  case sequence bs' of
         Just rs -> Right rs
-        Nothing -> Left $ map snd . filter (maybe True (const False) . fst) $ zip bs' [1..]
+        Nothing -> Left $ map snd . filter (isNothing . fst) $ zip bs' [1..]
 
 
 -- Formatting messages
 
-(+++) = T.append
+sender c = Address (Just (cfgMyName c)) (cfgMyMailAddress c)
 
-subject = T.pack $ printf subjectPattern (sheetNumber :: Integer)
-sender = Address (Just myName) myMailAddress
+replaceVar :: (T.Text, T.Text) -> T.Text -> T.Text
+replaceVar (x,y) = T.replace ("@{" +++ x +++ "}") y
 
-formatBlock :: (T.Text,T.Text,T.Text, T.Text) -> Mail
-formatBlock (firstName, lastName, mailAddress, text) =
-    simpleMail' receiver sender subject body
-  where paragraph s = if T.null s then "" else s +++ "\n\n"
+replaceVars xs t = foldr replaceVar t xs
+
+formatBlock :: Config -> (T.Text,T.Text,T.Text, T.Text) -> Mail
+formatBlock c (firstName, lastName, mailAddress, text) =
+    simpleMail' receiver (sender c) (subst cfgSubject) body
+  where paragraph s = if T.null (T.strip s) then "" else s +++ "\n\n"
         body = fromStrict $ 
-                 "Hallo " +++ firstName +++ " " +++ lastName +++ ",\n\n" +++ paragraph introduction +++ 
-                 text +++ "\n\n" +++ paragraph conclusion +++ valediction +++ "\n" +++ myName
-        receiver = Address (Just (firstName +++ " " +++ lastName)) mailAddress     
+                 subst cfgGreeting +++ ",\n\n" +++ paragraph (subst cfgIntro) +++ 
+                 subst' text +++ "\n\n" +++ paragraph (subst cfgConclusion) +++ 
+                 subst cfgValediction +++ "\n" +++ subst cfgSigName
+        subst' = replaceVars vars
+        subst f = subst' (f c)
+        receiver = Address (Just (firstName +++ " " +++ lastName)) mailAddress
+        vars = [("first_name", firstName), ("last_name", lastName), ("sheet", cfgSheet c), 
+                ("email", mailAddress), ("nl", "\n")]
+        
 
 
 -- Sending mails
@@ -89,10 +117,10 @@ formatAddress (Address name email) =
     Nothing -> email
     Just name' -> name' +++ " <" +++ email +++ ">"
 
-sendMails smtpPassword mails =
-  do con <- connectSMTPSTARTTLS smtpHost
-     sendCommand con (EHLO smtpHost)
-     sendCommand con (AUTH smtpAuthType smtpUser smtpPassword)
+sendMails c smtpPassword mails =
+  do con <- connectSMTPSTARTTLS (T.unpack $ cfgSMTPHost c)
+     sendCommand con (EHLO (T.unpack $ cfgSMTPHost c))
+     sendCommand con (AUTH LOGIN (T.unpack $ cfgSMTPUser c) smtpPassword)
      forM_ mails (\mail ->
        do TIO.putStrLn $ "Sending mail to ‘" +++ formatAddress (head (mailTo mail)) +++ "’..."
           renderedMail <- renderMail' mail
@@ -121,12 +149,16 @@ withEcho echo action = do
 main =
   do args <- getArgs
      if null args then
-       putStrLn usageDescription
+       putStrLn "No file given."
      else do
        password <- getPassword
        text <- TIO.readFile (args !! 0)
-       case parseBlocks $ T.splitOn "\n----\n" text of
-         Left is -> TIO.putStrLn $ "Invalid blocks: " +++ T.intercalate ", " (map (T.pack . show) is)
-         Right bs -> sendMails password (map formatBlock bs)
+       let blocks = T.splitOn "\n----\n" text
+       case parseConfig blocks of
+         Left errors -> mapM_ TIO.putStrLn errors
+         Right (config, blocks) ->
+           case parseBlocks blocks of
+             Left is -> TIO.putStrLn $ "Invalid blocks: " +++ T.intercalate ", " (map (T.pack . show) is)
+             Right bs -> sendMails config password (map (formatBlock config) bs)
 
 
