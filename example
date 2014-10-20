@@ -1,0 +1,43 @@
+Sheet:              1
+
+My Name:            Manuel Eberl
+My E-Mail:          eberlm@example.com
+Subject:            [Info2] Feedback zu Übungsblatt @{sheet}
+Greeting:           Hallo @{first_name}
+Valediction:        Viele Grüße
+Signature name:     Manuel
+
+SMTP Host:          mail.in.tum.de
+SMTP User:          eberlm
+
+----
+Introduction:
+hier ist das Feedback für deine Hausaufgaben zu Übungsblatt @{sheet}. Die genaue Bepunktung wird automatisch auf Basis unserer QuickCheck-Tests erstellt. Da das Übungssystem dieses Jahr komplett neu geschrieben wurde, sind die Punkte noch nicht abrufbar – sie werden aber bald freigeschaltet werden.
+----
+Conclusion:
+Falls etwas an der Bewertung unklar ist, kannst du gerne per E-Mail nachfragen.
+----
+
+Name: Ranseier Karl
+E-Mail: ranseier@example.com
+
+Aufgabe 1.1: 
+Boole'sche Funktionen so mit Guards zu schreiben ist ein Antipattern, siehe Vorlesungsfolie 52.
+
+Aufgabe 1.3:
+Funktion terminiert nicht für a = 1 und x > 1, z.B. isPower 2 1.
+
+----
+
+Name: Mierscheid Markus Maria
+E-Mail: mierscheid@example.com
+
+Aufgabe 1.1:
+Es gibt auch eine Funktion notElem.
+
+Aufgabe 1.2:
+Laut Konvention gehört eigentlich immer ein Leerzeichen zwischen Funktion und Parameter, d.h.
+    f n m = 1 + f (f (n - 1) m) (f (m - 1) n)
+statt
+    f n m = 1+f(f(n-1)m)(f(m-1)n)
+Letzteres ist deutlich lesbarer.
